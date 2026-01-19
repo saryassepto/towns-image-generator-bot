@@ -2,7 +2,7 @@ import { makeTownsBot } from '@towns-protocol/bot'
 import commands from './commands'
 
 const HF_DEFAULT_MODEL = 'black-forest-labs/FLUX.1-schnell' // Changed to schnell (faster, free)
-const HF_API_URL = 'https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell'
+const HF_API_URL = 'https://router.huggingface.co/models/black-forest-labs/FLUX.1-schnell'
 const HF_API_TOKEN = process.env.HF_API_TOKEN
 const HF_MODEL = process.env.HF_MODEL ?? HF_DEFAULT_MODEL
 
