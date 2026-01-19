@@ -1,7 +1,7 @@
 import { makeTownsBot } from '@towns-protocol/bot'
 import commands from './commands'
 
-const HF_DEFAULT_MODEL = 'black-forest-labs/FLUX.1-dev'
+const HF_DEFAULT_MODEL = 'black-forest-labs/FLUX.1-schnell' // Changed to schnell (faster, free)
 const HF_API_URL = 'https://api-inference.huggingface.co/models'
 const HF_API_TOKEN = process.env.HF_API_TOKEN
 const HF_MODEL = process.env.HF_MODEL ?? HF_DEFAULT_MODEL
@@ -18,6 +18,8 @@ type GeneratedImage = {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const generateImage = async (prompt: string, attempt = 1): Promise<GeneratedImage> => {
+    const MAX_ATTEMPTS = 5 // Increased from 2
+
     if (!HF_API_TOKEN) {
         throw new Error('HF_API_TOKEN is not configured')
     }
@@ -30,19 +32,22 @@ const generateImage = async (prompt: string, attempt = 1): Promise<GeneratedImag
         headers: {
             Authorization: `Bearer ${HF_API_TOKEN}`,
             'Content-Type': 'application/json',
-            Accept: 'image/png',
         },
         body: JSON.stringify({ inputs: prompt }),
     })
 
-    if (response.status === 503) {
+    // Handle model loading (503) or other temporary errors
+    if (response.status === 503 || response.status === 500) {
         const message = await response.text()
-        console.warn(`[imagine] Model loading (${response.status}): ${message}`)
-        if (attempt < 2) {
-            await sleep(3_000)
+        console.warn(`[imagine] Model issue (${response.status}): ${message}`)
+        
+        if (attempt < MAX_ATTEMPTS) {
+            const waitTime = attempt * 5000 // Progressive backoff: 5s, 10s, 15s...
+            console.log(`[imagine] Retrying in ${waitTime/1000}s...`)
+            await sleep(waitTime)
             return generateImage(prompt, attempt + 1)
         }
-        throw new Error('Model is still loading. Please try again soon.')
+        throw new Error('Model is still loading. Please try again in a minute.')
     }
 
     if (!response.ok) {
@@ -71,7 +76,7 @@ bot.onSlashCommand('help', async (handler, { channelId }) => {
             '• `/imagine <prompt>` - Generate an image (e.g., `/imagine a cozy cabin in the snow`)\n\n' +
             '**Message Triggers:**\n\n' +
             "• Mention me - I'll respond\n" +
-            "• React with 👋 - I'll wave back" +
+            "• React with 👋 - I'll wave back\n" +
             '• Say "hello" - I\'ll greet you back\n' +
             '• Say "ping" - I\'ll show latency\n' +
             '• Say "react" - I\'ll add a reaction\n',
@@ -99,12 +104,12 @@ bot.onSlashCommand('imagine', async (handler, { channelId, args, userId }) => {
 
     const loadingMessageId = (await handler.sendMessage(
         channelId,
-        `Generating an image for <@${userId}>...\nPrompt: "${prompt}"`,
+        `🎨 Generating an image for <@${userId}>...\nPrompt: "${prompt}"\n\n_This may take 10-30 seconds if the model is cold-starting..._`,
     )) as unknown as string | undefined
 
     try {
         const image = await generateImage(prompt)
-        await handler.sendMessage(channelId, `Here is your image, <@${userId}>:`, {
+        await handler.sendMessage(channelId, `✨ Here is your image, <@${userId}>:`, {
             attachments: [
                 {
                     type: 'chunked',
@@ -116,14 +121,14 @@ bot.onSlashCommand('imagine', async (handler, { channelId, args, userId }) => {
         })
     } catch (error) {
         console.error('[imagine] Failed to generate image', error)
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error'
         await handler.sendMessage(
             channelId,
-            'Sorry, I could not generate the image right now. Please try again in a moment.',
+            `❌ Sorry, I could not generate the image: ${errorMsg}\n\n💡 Tip: If the model is loading, try again in 30-60 seconds!`,
         )
     } finally {
         if (loadingMessageId) {
             try {
-                // Best-effort removal to reduce channel noise; ignore failures.
                 await handler.adminRemoveEvent(channelId, loadingMessageId)
             } catch (cleanupError) {
                 console.warn('[imagine] Failed to remove loading message', cleanupError)
