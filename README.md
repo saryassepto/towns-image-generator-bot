@@ -4,7 +4,7 @@ A simple, barebones bot example perfect for beginners learning to build Towns bo
 
 # Features
 - **Slash commands**: Registering and handling `/commands`
-- **Image generation**: `/imagine` uses Hugging Face Inference API 🎨
+- **Image generation**: `/imagine` uses Google Gemini API 🎨
 - **Message handling**: Detecting keywords in messages 💬
 - **Sending messages**: Posting messages to channels 📢
 - **Adding reactions**: Attaching emoji reactions to messages 😀
@@ -13,19 +13,18 @@ A simple, barebones bot example perfect for beginners learning to build Towns bo
 ## Slash Commands
 
 - `/help` - Shows available commands and message triggers
-- `/imagine <prompt>` - Generates an image with Hugging Face (example: `/imagine a cozy cabin in the snow`)
+- `/imagine <prompt>` - Generates an image with Google Gemini (example: `/imagine a cozy cabin in the snow`)
 - `/time` - Displays the current server time
 
-## 🖼️ Image Generation with Hugging Face
+## 🖼️ Image Generation with Google Gemini
 
-The bot includes an AI image generation feature powered by the **Hugging Face Inference API**.
+The bot includes an AI image generation feature powered by the **Google Gemini 2.0 Flash API**.
 
 - Command: `/imagine <prompt>`
-- Backend: `https://api-inference.huggingface.co/models/{model}`
-- Default model: `black-forest-labs/FLUX.1-dev`
+- Backend: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent`
 - The bot:
   - Shows a **loading message** while generating ⏳
-  - Calls the Hugging Face model to create an image 🤖
+  - Calls the Gemini model to create an image 🤖
   - Uploads the image as an attachment to Towns 🌐
   - Replies with the generated image in the same channel 📸
 
@@ -41,39 +40,18 @@ You will need to mention the bot if you're using the `Mentions, Commands, Replie
 
 - React with 👋 to any message - Bot responds with "I saw your wave!"
 
-## 🔐 Getting a Hugging Face API Token
+## 🔐 Getting a Google Gemini API Key
 
-1. Go to your Hugging Face account: `https://huggingface.co`
-2. Open **Settings** → **Access Tokens**: `https://huggingface.co/settings/tokens`
-3. Click **New token**:
-   - Name: e.g. `towns-image-bot`
-   - Role: at least **read** / Inference API access
-4. Copy the token and set it in your `.env` (or `env.example` template):
+1. Go to the [Google AI Studio](https://aistudio.google.com/).
+2. Create or select a project and enable the **Generative Language API**.
+3. Go to **API Keys** and create a key for your project.
+4. Copy the key and set it in your `.env` (or `env.example` template):
 
 ```bash
-HF_API_TOKEN=hf_your_token_here
+GEMINI_API_KEY=your_gemini_api_key
 ```
 
-> 💡 Treat this token like a password. Never commit your real token to Git.
-
-## 🧩 Supported Image Models
-
-You can control which Hugging Face model is used via the `HF_MODEL` environment variable.
-
-Examples:
-
-- `black-forest-labs/FLUX.1-dev` (default)
-- `black-forest-labs/FLUX.1-schnell`
-- `stabilityai/stable-diffusion-2-1`
-- `runwayml/stable-diffusion-v1-5`
-
-Set the model in your environment:
-
-```bash
-HF_MODEL=black-forest-labs/FLUX.1-dev
-```
-
-> ⚠️ Make sure the model you choose supports image generation via the Inference API.
+> 💡 Treat this key like a password. Never commit your real API key to Git.
 
 # Setup
 
@@ -101,8 +79,7 @@ Required variables in `.env`:
 - `APP_PRIVATE_DATA` - Your Towns app private data (base64 encoded)
 - `JWT_SECRET` - JWT secret for webhook authentication
 - `PORT` - Port to run the bot on (optional, defaults to 5123)
-- `HF_API_TOKEN` - Hugging Face Inference API token (required for `/imagine`)
-- `HF_MODEL` - Hugging Face model to use (optional, defaults to `black-forest-labs/FLUX.1-dev`)
+- `GEMINI_API_KEY` - Google Gemini API key (required for `/imagine`)
 
 # Usage
 
@@ -111,7 +88,7 @@ Once the bot is running, installed to a space and added to a channel:
 **Try the slash commands:**
 
 - `/help` - See all available features
-- `/imagine a cozy cabin in the snow` - Generate an image from a prompt
+- `/imagine a cozy cabin in the snow` - Generate an image from a prompt using Gemini
 - `/time` - Get the current time
 
 **Try the message triggers:**
@@ -155,19 +132,18 @@ Main bot logic with:
 
 ## 🛠️ Troubleshooting Image Generation
 
-- **Bot says HF_API_TOKEN is not configured**
-  - Make sure `HF_API_TOKEN` is set in your `.env` and that the process has been restarted.
+- **Bot says GEMINI_API_KEY is not configured**
+  - Make sure `GEMINI_API_KEY` is set in your `.env` and that the process has been restarted.
   - Confirm there are no extra quotes around the token.
 
 - **Bot replies: "Model is still loading. Please try again soon."**
-  - Hugging Face is warming up the model (common on first request).
+  - Gemini is warming up the model or scaling resources (common on first request).
   - Wait a few seconds and try the `/imagine` command again.
 
 - **Bot replies: "Sorry, I could not generate the image right now."**
-  - The Hugging Face API returned an error or empty image:
+  - The Gemini API returned an error or empty image:
     - Check your server logs for detailed error messages.
-    - Verify your HF token is valid and not rate-limited.
-    - Confirm `HF_MODEL` is a valid image-generation model.
+    - Verify your Gemini API key is valid and not rate-limited.
 
 - **Images are not appearing in Towns**
   - Ensure the bot has permission to send messages and attachments in the channel.

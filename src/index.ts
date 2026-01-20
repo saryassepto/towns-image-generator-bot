@@ -1,10 +1,9 @@
 import { makeTownsBot } from '@towns-protocol/bot'
 import commands from './commands'
 
-const HF_DEFAULT_MODEL = 'black-forest-labs/FLUX.1-dev'
-const HF_API_URL = 'https://api-inference.huggingface.co/models'
-const HF_API_TOKEN = process.env.HF_API_TOKEN
-const HF_MODEL = process.env.HF_MODEL ?? HF_DEFAULT_MODEL
+const GEMINI_ENDPOINT =
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent'
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY
 
 const bot = await makeTownsBot(process.env.APP_PRIVATE_DATA!, process.env.JWT_SECRET!, {
     commands,
@@ -18,26 +17,35 @@ type GeneratedImage = {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const generateImage = async (prompt: string, attempt = 1): Promise<GeneratedImage> => {
-    if (!HF_API_TOKEN) {
-        throw new Error('HF_API_TOKEN is not configured')
+    if (!GEMINI_API_KEY) {
+        throw new Error('GEMINI_API_KEY is not configured')
     }
 
-    const endpoint = `${HF_API_URL}/${encodeURIComponent(HF_MODEL)}`
-    console.log(`[imagine] Requesting Hugging Face model=${HF_MODEL} attempt=${attempt}`)
+    const url = `${GEMINI_ENDPOINT}?key=${encodeURIComponent(GEMINI_API_KEY)}`
+    console.log(`[imagine] Requesting Gemini image for prompt="${prompt}" attempt=${attempt}`)
 
-    const response = await fetch(endpoint, {
+    const response = await fetch(url, {
         method: 'POST',
         headers: {
-            Authorization: `Bearer ${HF_API_TOKEN}`,
             'Content-Type': 'application/json',
-            Accept: 'image/png',
         },
-        body: JSON.stringify({ inputs: prompt }),
+        body: JSON.stringify({
+            contents: [
+                {
+                    role: 'user',
+                    parts: [{ text: prompt }],
+                },
+            ],
+            // Hints for image generation; Gemini may ignore/override depending on model defaults.
+            generationConfig: {
+                responseMimeType: 'application/json',
+            },
+        }),
     })
 
     if (response.status === 503) {
-        const message = await response.text()
-        console.warn(`[imagine] Model loading (${response.status}): ${message}`)
+        const message = await response.text().catch(() => '')
+        console.warn(`[imagine] Gemini model loading (${response.status}): ${message}`)
         if (attempt < 2) {
             await sleep(3_000)
             return generateImage(prompt, attempt + 1)
@@ -45,20 +53,34 @@ const generateImage = async (prompt: string, attempt = 1): Promise<GeneratedImag
         throw new Error('Model is still loading. Please try again soon.')
     }
 
+    const json = (await response.json().catch(async () => {
+        const text = await response.text().catch(() => '')
+        throw new Error(`Gemini response was not valid JSON. Status=${response.status}, body=${text}`)
+    })) as unknown
+
     if (!response.ok) {
-        const errorText = await response.text().catch(() => '')
-        throw new Error(`Hugging Face request failed (${response.status}): ${errorText || response.statusText}`)
+        console.error('[imagine] Gemini API error response', json)
+        throw new Error(`Gemini request failed with status ${response.status}`)
     }
 
-    const mimeType = (response.headers.get('content-type') || 'image/png').split(';')[0]
-    const arrayBuffer = await response.arrayBuffer()
-    const data = new Uint8Array(arrayBuffer)
+    const candidates = (json as any).candidates
+    const parts = candidates?.[0]?.content?.parts as Array<{ inlineData?: { mimeType?: string; data?: string } }> | undefined
+    const inline = parts?.find((p) => p.inlineData && typeof p.inlineData.data === 'string')?.inlineData
+
+    if (!inline || !inline.data) {
+        console.error('[imagine] Gemini response missing inline image data', json)
+        throw new Error('Did not receive image data from Gemini')
+    }
+
+    const mimeType = inline.mimeType || 'image/png'
+    const buffer = Buffer.from(inline.data, 'base64')
+    const data = new Uint8Array(buffer)
 
     if (data.length === 0) {
-        throw new Error('Received empty image data from Hugging Face')
+        throw new Error('Received empty image data from Gemini')
     }
 
-    console.log(`[imagine] Image generated (${data.length} bytes, ${mimeType})`)
+    console.log(`[imagine] Image generated via Gemini (${data.length} bytes, ${mimeType})`)
     return { data, mimeType }
 }
 
@@ -91,9 +113,9 @@ bot.onSlashCommand('imagine', async (handler, { channelId, args, userId }) => {
         return
     }
 
-    if (!HF_API_TOKEN) {
-        console.error('[imagine] Missing HF_API_TOKEN environment variable')
-        await handler.sendMessage(channelId, 'Image generation is not configured. Please set HF_API_TOKEN.')
+    if (!GEMINI_API_KEY) {
+        console.error('[imagine] Missing GEMINI_API_KEY environment variable')
+        await handler.sendMessage(channelId, 'Image generation is not configured. Please set GEMINI_API_KEY.')
         return
     }
 
